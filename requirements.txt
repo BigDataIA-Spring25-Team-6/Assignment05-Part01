@@ -1,0 +1,17 @@
+snowflake-connector-python
+langchain-core
+langchain_openai
+fastapi
+uvicorn
+openai
+requests
+streamlit
+pandas
+python-dotenv
+selenium
+boto3
+sentence-transformers
+numpy
+pinecone
+git+https://github.com/brandonstarxel/chunking_evaluation.git
+tavily

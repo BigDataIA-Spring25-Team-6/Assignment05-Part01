@@ -27,6 +27,9 @@ client = TavilyClient(api_key=tavily_api_key)
 # Define web_search tool
 @tool("web_search")
 def web_search(query: str) -> str:
+    """
+    Search for general knowledge using Tavily API and return the top 5 results.
+    """
     response = client.search(
         query=query,
         search_depth="advanced",
@@ -46,6 +49,9 @@ def final_answer(
     conclusion: str,
     sources: str
 ) -> str:
+    """
+    Formats a detailed research report with introduction, steps, findings, conclusion, and sources.
+    """
     if isinstance(research_steps, list):
         research_steps = "\n".join([f"- {r}" for r in research_steps])
     if isinstance(sources, list):
@@ -152,7 +158,7 @@ graph.add_edge("final_answer", END)
 runnable = graph.compile()
 
 # Optional: visualize
-Image(runnable.get_graph().draw_png())
+#Image(runnable.get_graph().draw_png())
 
 # Test it
 state = {

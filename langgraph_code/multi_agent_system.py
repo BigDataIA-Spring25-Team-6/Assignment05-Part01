@@ -12,6 +12,12 @@ from IPython.display import Image
 from matplotlib import pyplot as plt
 import pandas as pd
 import snowflake.connector
+import re
+from data_prep.pinecone_rag import QUARTER_REGEX, YEAR_REGEX, embed_texts, get_or_create_index
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Define LangChain agent state
 class AgentState(TypedDict):
@@ -37,6 +43,76 @@ def web_search(query: str):
         ["\n".join([x["title"], x["content"], x["url"]]) for x in results]
     )
     return contexts
+
+def format_rag_contents(matches: list):
+    """Formats the RAG search results into a readable format."""
+    contexts = []
+    for x in matches:
+        text=(
+            f"Source: {x['metadata']['source']}\n"
+            f"Quarter: {x['metadata']['quarter']}\n"
+            f"Year: {x['metadata']['year']}\n"
+        )
+        contexts.append(text)
+    return "\n---\n".join(contexts)
+
+@tool("rag_search_filter")
+def rag_search_filter(query: str, filters: dict):
+    """Finds information from our database using a natural language query
+    and specific metadata filters."""
+    index = get_or_create_index()
+    query_embedding = embed_texts([query])[0]
+    
+    results = index.query(
+        vector=query_embedding.tolist(),
+        top_k=5,
+        include_metadata=True,
+        filter=filters  
+    )
+    threshold = 0.4
+    filtered_matches = [match for match in results.get("matches", []) if match.get("score", 0) >= threshold]
+    print(f"results in rag_search_filter: {filtered_matches}")
+    return format_rag_contents(filtered_matches)
+
+@tool("rag_search")
+def rag_search(query: str):
+    """Finds information from our database using a natural language query."""
+    index = get_or_create_index()
+    query_embedding = embed_texts([query])[0]
+    
+    results = index.query(
+        vector=query_embedding.tolist(),
+        top_k=5,
+        include_metadata=True
+    )
+    threshold = 0.4
+    filtered_matches = [match for match in results.get("matches", []) if match.get("score", 0) >= threshold]
+    print(f"results in rag_search: {filtered_matches}")
+
+    return format_rag_contents(filtered_matches)
+
+def construct_filters_from_query(query:str):
+    """Construct metadata filters dynamically based on user query."""
+    filters = []
+    quarter_match = re.search(QUARTER_REGEX, query)
+    year_match = re.search(YEAR_REGEX, query)
+    
+    if quarter_match:
+        quarter = quarter_match.group(0).upper()
+        filters.append({"quarter": {"$eq": quarter}})
+
+    if year_match:
+        year = year_match.group(0)
+        filters.append({"year": {"$eq": year}})
+    
+    if len(filters)>1:
+        print({"$and": filters})
+        return {"$and": filters}
+    elif len(filters)==1:
+        print(filters[0])
+        return filters[0]
+    else:
+        return {}
  
 # Define snowflake_agent tool
 @tool("snowflake_agent")
@@ -219,6 +295,8 @@ llm = ChatOpenAI(
 )
 
 tools=[
+    rag_search,
+    rag_search_filter,
     snowflake_agent,
     web_search,
     final_answer
@@ -249,6 +327,7 @@ oracle = (
         "scratchpad": lambda x: create_scratchpad(
             intermediate_steps=x["intermediate_steps"]
         ),
+        "filters": lambda x: construct_filters_from_query(x["input"])
     }
     | prompt
     | llm.bind_tools(tools, tool_choice="any")
@@ -281,6 +360,8 @@ def router(state: list):
     
 tool_str_to_func = {
     "snowflake_agent": snowflake_agent,
+    "rag_search": rag_search,
+    "rag_search_filter": rag_search_filter,
     "web_search": web_search,
     "final_answer": final_answer
 }
@@ -289,6 +370,9 @@ def run_tool(state: list):
     # use this as helper function so we repeat less code
     tool_name = state["intermediate_steps"][-1].tool
     tool_args = state["intermediate_steps"][-1].tool_input
+    if tool_name == "rag_search_filter":
+        tool_args["filters"] = construct_filters_from_query(state["input"])
+
     print(f"{tool_name}.invoke(input={tool_args})")
     # run tool
     out = tool_str_to_func[tool_name].invoke(input=tool_args)
@@ -304,6 +388,8 @@ graph = StateGraph(AgentState)
 
 graph.add_node("oracle", run_oracle)
 graph.add_node("snowflake_agent", run_tool)
+graph.add_node("rag_search", run_tool)
+graph.add_node("rag_search_filter", run_tool)
 graph.add_node("web_search", run_tool)
 graph.add_node("final_answer", run_tool)
 
@@ -326,7 +412,40 @@ runnable = graph.compile()
 
 Image(runnable.get_graph().draw_png())
 
-out = runnable.invoke({
+state = {
     "input": "What is the market cap of NVIDIA?",
     "chat_history": [],
-})
+}
+
+out = runnable.invoke(state)
+
+def build_report(output: dict):
+    research_steps = output["research_steps"]
+    if type(research_steps) is list:
+        research_steps = "\n".join([f"- {r}" for r in research_steps])
+    sources = output["sources"]
+    if type(sources) is list:
+        sources = "\n".join([f"- {s}" for s in sources])
+    return f"""
+INTRODUCTION
+------------
+{output["introduction"]}
+
+RESEARCH STEPS
+--------------
+{research_steps}
+
+REPORT
+------
+{output["main_body"]}
+
+CONCLUSION
+----------
+{output["conclusion"]}
+
+SOURCES
+-------
+{sources}
+"""
+
+print(build_report(output=out["intermediate_steps"][-1].tool_input))

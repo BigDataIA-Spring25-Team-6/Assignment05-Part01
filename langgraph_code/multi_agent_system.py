@@ -411,10 +411,6 @@ graph.add_edge("final_answer", END)
 
 runnable = graph.compile()
 
-
-
-out = runnable.invoke(state)
-
 def build_report(output: dict):
     research_steps = output["research_steps"]
     if type(research_steps) is list:

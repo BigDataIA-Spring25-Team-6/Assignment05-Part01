@@ -49,7 +49,7 @@ def format_rag_contents(matches: list):
     contexts = []
     for x in matches:
         text=(
-            f"Source: {x['metadata']['source']}\n"
+            f"Source: {x['metadata']['text']}\n"
             f"Quarter: {x['metadata']['quarter']}\n"
             f"Year: {x['metadata']['year']}\n"
         )
@@ -410,14 +410,14 @@ graph.add_edge("final_answer", END)
 
 runnable = graph.compile()
 
-Image(runnable.get_graph().draw_png())
+#Image(runnable.get_graph().draw_png())
 
-state = {
-    "input": "What is the market cap of NVIDIA?",
-    "chat_history": [],
-}
+# state = {
+#     "input": "What is the market cap of NVIDIA?",
+#     "chat_history": [],
+# }
 
-out = runnable.invoke(state)
+# out = runnable.invoke(state)
 
 def build_report(output: dict):
     research_steps = output["research_steps"]
@@ -448,4 +448,4 @@ SOURCES
 {sources}
 """
 
-print(build_report(output=out["intermediate_steps"][-1].tool_input))
+#print(build_report(output=out["intermediate_steps"][-1].tool_input))

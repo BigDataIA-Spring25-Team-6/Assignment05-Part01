@@ -1,5 +1,8 @@
 import operator
 import os
+import json
+from io import BytesIO
+import base64
 from typing import TypedDict, Annotated
 from langchain_core.agents import AgentAction
 from langchain_core.messages import BaseMessage
@@ -8,7 +11,6 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 from langchain_core.tools import tool
 from tavily import TavilyClient
-from IPython.display import Image
 from matplotlib import pyplot as plt
 import pandas as pd
 import snowflake.connector
@@ -71,7 +73,6 @@ def rag_search_filter(query: str, filters: dict):
     )
     threshold = 0.4
     filtered_matches = [match for match in results.get("matches", []) if match.get("score", 0) >= threshold]
-    print(f"results in rag_search_filter: {filtered_matches}")
     return format_rag_contents(filtered_matches)
 
 @tool("rag_search")
@@ -87,7 +88,6 @@ def rag_search(query: str):
     )
     threshold = 0.4
     filtered_matches = [match for match in results.get("matches", []) if match.get("score", 0) >= threshold]
-    print(f"results in rag_search: {filtered_matches}")
 
     return format_rag_contents(filtered_matches)
 
@@ -106,10 +106,8 @@ def construct_filters_from_query(query:str):
         filters.append({"year": {"$eq": year}})
     
     if len(filters)>1:
-        print({"$and": filters})
         return {"$and": filters}
     elif len(filters)==1:
-        print(filters[0])
         return filters[0]
     else:
         return {}
@@ -121,9 +119,6 @@ def snowflake_agent(query: str, year: str = None, quarter: str = None) -> str:
     Retrieves NVIDIA valuation data from Snowflake using natural language + filters.
     Returns a GPT-generated summary and a saved chart path.
     """
-    import json
-    import uuid
-
     # Step 1: Use GPT to generate SQL in structured format
     llm = ChatOpenAI(model="gpt-4o", temperature=0)
     system_prompt = """
@@ -215,10 +210,15 @@ def snowflake_agent(query: str, year: str = None, quarter: str = None) -> str:
     ax.set_ylabel(y_col)
     ax.grid(True)
 
-    chart_filename = f"chart_{uuid.uuid4().hex}.png"
+    buf = BytesIO()
     plt.tight_layout()
-    plt.savefig(chart_filename, format="png")
+    plt.savefig(buf, format="png")
     plt.close()
+    buf.seek(0)
+
+    # Encode image as base64 string
+    img_base64 = base64.b64encode(buf.read()).decode("utf-8")
+    img_tag = f'<img src="data:image/png;base64,{img_base64}" style="max-width: 100%;">'
 
     # Step 4: Summary using GPT
     summary_prompt = f"""
@@ -232,7 +232,8 @@ def snowflake_agent(query: str, year: str = None, quarter: str = None) -> str:
 
     summary = llm.invoke(summary_prompt).content.strip()
 
-    return summary + f"\n\n Chart saved to: {chart_filename}"
+    # Append image to summary
+    return summary + f"\n\n{img_tag}"
 
 # Define final_answer tool
 @tool("final_answer")
@@ -410,14 +411,9 @@ graph.add_edge("final_answer", END)
 
 runnable = graph.compile()
 
-#Image(runnable.get_graph().draw_png())
 
-# state = {
-#     "input": "What is the market cap of NVIDIA?",
-#     "chat_history": [],
-# }
 
-# out = runnable.invoke(state)
+out = runnable.invoke(state)
 
 def build_report(output: dict):
     research_steps = output["research_steps"]
@@ -447,5 +443,3 @@ SOURCES
 -------
 {sources}
 """
-
-#print(build_report(output=out["intermediate_steps"][-1].tool_input))

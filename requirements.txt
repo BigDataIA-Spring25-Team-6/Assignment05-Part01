@@ -14,4 +14,6 @@ sentence-transformers
 numpy
 pinecone
 git+https://github.com/brandonstarxel/chunking_evaluation.git
-tavily
+tavily-python
+langgraph
+ipython

@@ -1,0 +1,12 @@
+env/
+venv/
+.env
+*.log
+.git
+.gitignore
+.DS_Store
+huggingface_cache/
+test/
+__pycache__/
+*.pyc
+test.py

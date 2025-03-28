@@ -4,8 +4,6 @@ langchain_openai
 fastapi
 uvicorn
 openai
-requests
-streamlit
 pandas
 python-dotenv
 selenium

@@ -1,5 +1,8 @@
+import html
 import streamlit as st
 import requests
+import base64
+from io import BytesIO
 
 st.set_page_config(page_title="NVIDIA Research Assistant", layout="wide")
 st.title("🧾 Assignment 5.1 Team 6 - NVIDIA Research Assistant")
@@ -16,8 +19,9 @@ with st.sidebar:
         "Web Search Agent",
     ])
 
+# --- Session State ---
 if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []  # stores tuples of (role, message)
+    st.session_state.chat_history = []
 
 backend_base_url = "http://localhost:8000"
 agent_map = {
@@ -30,70 +34,58 @@ agent_map = {
 query = st.chat_input("Ask your financial research question...")
 
 if query:
-    # Save user message first
-    st.session_state.chat_history.append(("user", query))
-
-    # Render user bubble
-    with st.chat_message("user"):
-        st.markdown(query)
 
     year = selected_years[0] if selected_years else None
     quarter = selected_quarters[0] if selected_quarters else None
 
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            try:
-                # Call appropriate agent endpoint
-                if agent_mode == "Default":
-                    res = requests.post(f"{backend_base_url}/use-all-agents/", params={"query": query})
-                    result = res.json()["result"]
-                else:
-                    agent_name = agent_map[agent_mode]
-                    res = requests.post(
-                        f"{backend_base_url}/use-agent/",
-                        params={
-                            "agent_name": agent_name,
-                            "query": query,
-                            "year": year,
-                            "quarter": quarter,
-                        }
-                    )
-                    # snowflake returns structured dict
-                    result = res.json()["result"]
-                    if isinstance(result, dict) and "main_body" in result:
-                        result = result["main_body"]
 
-                # Save assistant message
-                st.session_state.chat_history.append(("assistant", result))
-
-                # Display inside assistant bubble
-                st.markdown(
-                    f"<div style='background-color: #262730; padding: 1rem; border-radius: 10px; font-size: 0.95rem;'>{result}</div>",
-                    unsafe_allow_html=True
+    with st.spinner("Thinking..."):
+        try:
+            if agent_mode == "Default":
+                res = requests.post(f"{backend_base_url}/use-all-agents/", params={"query": query})
+                result = res.json()["result"]
+            else:
+                agent_name = agent_map[agent_mode]
+                res = requests.post(
+                    f"{backend_base_url}/use-agent/",
+                    params={
+                        "agent_name": agent_name,
+                        "query": query,
+                        "year": year,
+                        "quarter": quarter,
+                    }
                 )
+                result = res.json()["result"]
+                if isinstance(result, dict) and "main_body" in result:
+                    result = result["main_body"]
 
-                # Download button
-                filename = f"{query.strip().replace(' ', '_').lower()}.txt"
-                st.download_button(
-                    label="📄 Download Report",
-                    data=result,
-                    file_name=filename,
-                    mime="text/plain"
-                )
+            # Append both user and assistant messages to chat history
+            st.session_state.chat_history.append(("user", query))
+            st.session_state.chat_history.append(("assistant", result))
 
-            except Exception as e:
-                error_text = f"❌ Error: {e}"
-                st.session_state.chat_history.append(("assistant", error_text))
-                st.error(error_text)
+        except Exception as e:
+            error_text = f"❌ Error: {e}"
+            st.session_state.chat_history.append(("user", query))
+            st.session_state.chat_history.append(("assistant", error_text))
 
-# --- Show history (except the current round just rendered) ---
-# Prevent duplicate by skipping last two messages (already rendered above)
-for role, msg in st.session_state.chat_history[:-2]:
+for role, msg in st.session_state.chat_history:
     with st.chat_message(role):
         if role == "assistant":
             st.markdown(
                 f"<div style='background-color: #262730; padding: 1rem; border-radius: 10px; font-size: 0.95rem;'>{msg}</div>",
                 unsafe_allow_html=True
+            )
+
+            plain_msg = html.unescape(msg)
+            plain_msg = plain_msg.replace("<", "&lt;").replace(">", "&gt;")
+
+            filename = f"{msg[:20].strip().replace(' ', '_').lower()}.txt"
+            st.download_button(
+                label="📄 Download Report",
+                data=plain_msg,
+                file_name=filename,
+                mime="text/plain",
+                key=f"download_{hash(msg)}"
             )
         else:
             st.markdown(msg)

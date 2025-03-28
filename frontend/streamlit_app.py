@@ -23,7 +23,7 @@ with st.sidebar:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-backend_base_url = "http://localhost:8000"
+backend_base_url = "https://backend-325254329458.us-central1.run.app"
 agent_map = {
     "Snowflake Agent": "snowflake_agent",
     "RAG Search Agent": "rag_search",

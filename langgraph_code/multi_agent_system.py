@@ -267,7 +267,8 @@ def final_answer(
 # Nodes for the graph
 
 # System prompt for the oracle
-system_prompt = """You are the oracle, the great AI decision maker.
+system_prompt = """
+You are the oracle, the great AI decision maker.
 Given the user's query you must decide what to do with it based on the
 list of tools provided to you.
 
@@ -279,7 +280,33 @@ not use it again).
 You should aim to collect information from a diverse range of sources before
 providing the answer to the user. Once you have collected plenty of information
 to answer the user's question (stored in the scratchpad) use the final_answer
-tool."""
+tool.
+
+TOOLS AVAILABLE:
+
+1. snowflake_agent
+- Use ONLY when the question is specifically about **NVIDIA (NVDA)'s financial or valuation metrics** like market cap, trailing P/E, forward P/E, PEG ratio, EV/EBITDA, etc.
+- Do NOT use this if the query refers to:
+  - Other companies (e.g., Apple, Meta, Google)
+  - General stock market trends or company news
+  - Events, risks, or external data
+- Avoid if no NVIDIA financial metric is mentioned explicitly.
+
+2. rag_search / rag_search_filter
+- Use for internal document-based queries such as earnings reports, risk factors, transcripts, etc.
+- Use `rag_search_filter` if a specific quarter or year is provided.
+- Use `rag_search` otherwise.
+
+3. web_search
+- Use for open-ended or recent news, company comparisons, or when external general web data is required.
+- Examples:
+  - "What’s happening with AI stocks this week?"
+  - "Compare Apple and Meta's recent stock performance"
+
+4. final_answer
+- Use this after collecting sufficient data from one or more tools.
+- This tool will format and return a structured report to the user.
+"""
 
 prompt = ChatPromptTemplate.from_messages([
     ("system", system_prompt),
@@ -368,14 +395,22 @@ tool_str_to_func = {
 }
 
 def run_tool(state: list):
-    # use this as helper function so we repeat less code
     tool_name = state["intermediate_steps"][-1].tool
     tool_args = state["intermediate_steps"][-1].tool_input
+
     if tool_name == "rag_search_filter":
         tool_args["filters"] = construct_filters_from_query(state["input"])
 
+    # Inject Snowflake image if we're at final_answer
+    if tool_name == "final_answer" and isinstance(tool_args, dict):
+        for step in state["intermediate_steps"]:
+            if step.tool == "snowflake_agent" and "data:image/png;base64" in step.log:
+                # Embed image in report body
+                tool_args["main_body"] += f"\n\nVISUALIZATION\n{step.log}"
+                break
+
     print(f"{tool_name}.invoke(input={tool_args})")
-    # run tool
+
     out = tool_str_to_func[tool_name].invoke(input=tool_args)
     action_out = AgentAction(
         tool=tool_name,
